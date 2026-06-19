@@ -215,11 +215,12 @@ def concat_clips(clip_paths, output_path):
         raise RuntimeError(f"ffmpeg concat failed: {result.stderr[-500:]}")
 
 
-def build_slideshow(slides, output_path, work_dir, ratio="16:9", fit_mode="crop"):
+def build_slideshow(slides, output_path, work_dir, ratio="16:9"):
     """
-    slides: list of {path, duration, direction, speed}
+    slides: list of {path, duration, direction, speed, fit_mode}
     ratio: one of RATIO_RESOLUTIONS keys
-    fit_mode: 'crop' (default) | 'letterbox' | 'smart'
+
+    fit_mode is now per-slide (read from each cfg), defaulting to 'crop'.
     """
     resolution = get_resolution(ratio)
     work_dir = Path(work_dir)
@@ -236,7 +237,7 @@ def build_slideshow(slides, output_path, work_dir, ratio="16:9", fit_mode="crop"
                 cfg.get("speed", "medium"),
                 clip_path,
                 resolution,
-                fit_mode,
+                cfg.get("fit_mode", "crop"),
             )
             resolved.append(direction)
             clip_paths.append(clip_path)

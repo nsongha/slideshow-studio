@@ -30,12 +30,16 @@ THUMBS_DIR.mkdir(exist_ok=True)
 app = FastAPI(title="Slideshow Automation")
 
 
+class SlideConfig(BaseModel):
+    filename: str
+    fit_mode: str = "crop"
+
+
 class GenerateRequest(BaseModel):
-    filenames: List[str]
+    slides: List[SlideConfig]
     duration: float = 4.0
     speed: str = "medium"
     ratio: str = "16:9"
-    fit_mode: str = "crop"
 
 
 class RenameRequest(BaseModel):
@@ -138,23 +142,24 @@ def delete_image(name: str):
 
 @app.post("/api/generate")
 def generate(req: GenerateRequest):
-    if not req.filenames:
+    if not req.slides:
         raise HTTPException(400, "No slides provided")
     if req.ratio not in slideshow.RATIO_RESOLUTIONS:
         raise HTTPException(400, f"Invalid ratio: {req.ratio}")
-    if req.fit_mode not in ("crop", "letterbox", "smart"):
-        raise HTTPException(400, f"Invalid fit_mode: {req.fit_mode}")
 
     configs = []
-    for name in req.filenames:
-        path = _safe_name(name)
+    for s in req.slides:
+        if s.fit_mode not in ("crop", "letterbox", "smart"):
+            raise HTTPException(400, f"Invalid fit_mode: {s.fit_mode}")
+        path = _safe_name(s.filename)
         if not path.exists():
-            raise HTTPException(404, f"Image not found: {name}")
+            raise HTTPException(404, f"Image not found: {s.filename}")
         configs.append({
             "path": str(path),
             "duration": req.duration,
             "direction": "random",
             "speed": req.speed,
+            "fit_mode": s.fit_mode,
         })
 
     output_name = f"slideshow_{uuid.uuid4().hex[:8]}.mp4"
@@ -163,8 +168,7 @@ def generate(req: GenerateRequest):
 
     try:
         directions = slideshow.build_slideshow(
-            configs, output_path, work_dir,
-            ratio=req.ratio, fit_mode=req.fit_mode,
+            configs, output_path, work_dir, ratio=req.ratio,
         )
     finally:
         if work_dir.exists():
@@ -174,7 +178,6 @@ def generate(req: GenerateRequest):
         "video": output_name,
         "directions": directions,
         "ratio": req.ratio,
-        "fit_mode": req.fit_mode,
     }
 
 

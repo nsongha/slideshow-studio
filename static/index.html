@@ -15,7 +15,9 @@
   input[type="range"] { accent-color: #2563eb; }
   .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-  .speed-btn.active, .ratio-btn.active, .fit-btn.active { background: #0f172a; color: white; }
+  .speed-btn.active, .ratio-btn.active { background: #0f172a; color: white; }
+  .slide-card .fit-section { display: none; }
+  .slide-card.selected .fit-section { display: flex; }
   #previewBox { transition: width 0.25s ease, height 0.25s ease; }
   /* Preview image: crop fills, letterbox contains */
   #previewImg.fit-crop {
@@ -66,14 +68,6 @@
         Upload
         <input id="uploadInput" type="file" accept="image/*" multiple class="hidden">
       </label>
-    </div>
-
-    <div class="px-5 py-3 border-b border-slate-200 bg-white">
-      <div class="text-xs text-slate-600 mb-1.5">Fit mode</div>
-      <div id="fitToggle" class="grid grid-cols-2 gap-1 bg-white border border-slate-200 rounded-md p-0.5">
-        <button data-value="crop" class="fit-btn text-xs py-1 rounded active">Crop</button>
-        <button data-value="letterbox" class="fit-btn text-xs py-1 rounded">Letterbox</button>
-      </div>
     </div>
 
     <div id="slideList" class="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1.5"></div>
@@ -146,17 +140,26 @@
 
 <!-- Slide card -->
 <template id="slideTemplate">
-  <div class="slide-card group relative bg-white border border-slate-200 rounded-lg p-2 cursor-grab flex items-center gap-3 hover:border-slate-300">
-    <div class="index-num text-[11px] text-slate-400 w-5 text-center tabular-nums select-none">1</div>
-    <img class="thumb w-14 h-14 rounded object-cover bg-slate-100 flex-shrink-0 pointer-events-none" />
-    <div class="filename flex-1 min-w-0 text-xs font-medium text-slate-700 truncate"></div>
-    <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-      <label class="p-1.5 rounded hover:bg-slate-100 text-slate-500 cursor-pointer" title="Replace">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>
-        <input type="file" accept="image/*" class="hidden replace-input">
-      </label>
-      <button class="delete-btn p-1.5 rounded hover:bg-red-50 text-slate-500 hover:text-red-600" title="Delete">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+  <div class="slide-card group relative bg-white border border-slate-200 rounded-lg p-2 cursor-grab hover:border-slate-300" data-fit-mode="crop">
+    <div class="flex items-center gap-3">
+      <div class="index-num text-[11px] text-slate-400 w-5 text-center tabular-nums select-none">1</div>
+      <img class="thumb w-14 h-14 rounded object-cover bg-slate-100 flex-shrink-0 pointer-events-none" />
+      <div class="filename flex-1 min-w-0 text-xs font-medium text-slate-700 truncate"></div>
+      <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <label class="p-1.5 rounded hover:bg-slate-100 text-slate-500 cursor-pointer" title="Replace">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>
+          <input type="file" accept="image/*" class="hidden replace-input">
+        </label>
+        <button class="delete-btn p-1.5 rounded hover:bg-red-50 text-slate-500 hover:text-red-600" title="Delete">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="fit-section mt-2 pt-2 border-t border-slate-100 items-center justify-between gap-2">
+      <span class="text-[10px] uppercase tracking-wide text-slate-400 font-medium">Fit mode</span>
+      <button class="fit-toggle text-[11px] px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium inline-flex items-center gap-1.5" title="Click to switch crop / letterbox">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17l-4-4 4-4M17 7l4 4-4 4"/></svg>
+        <span class="fit-value">Crop</span>
       </button>
     </div>
   </div>
@@ -197,7 +200,6 @@ const durationRange = $('durationRange');
 const durationLabel = $('durationLabel');
 const speedToggle = $('speedToggle');
 const ratioToggle = $('ratioToggle');
-const fitToggle = $('fitToggle');
 const previewBox = $('previewBox');
 const previewBg = $('previewBg');
 const videoGallery = $('videoGallery');
@@ -208,7 +210,6 @@ let imgLimit = 30;
 let speed = 'medium';
 let selectedRatio = '16:9';
 let previewAspect = '16:9';
-let fitMode = 'crop';
 let currentVideo = null;
 let currentImageFilename = null;
 
@@ -236,20 +237,19 @@ ratioToggle.addEventListener('click', e => {
   }
 });
 
-fitToggle.addEventListener('click', e => {
-  const btn = e.target.closest('.fit-btn');
-  if (!btn) return;
-  fitMode = btn.dataset.value;
-  fitToggle.querySelectorAll('.fit-btn').forEach(b => b.classList.toggle('active', b === btn));
-  applyFitToPreview();
-});
+function getCardFitMode(filename) {
+  if (!filename) return 'crop';
+  const card = [...slideList.querySelectorAll('.slide-card')]
+    .find(c => c.dataset.filename === filename);
+  return card?.dataset.fitMode || 'crop';
+}
 
 function applyFitToPreview() {
   // Only meaningful when an image is being previewed (not video, not placeholder).
   const imageVisible = !previewImg.classList.contains('hidden');
+  const fitMode = getCardFitMode(currentImageFilename);
   previewImg.classList.toggle('fit-crop', fitMode === 'crop');
   previewImg.classList.toggle('fit-letterbox', fitMode === 'letterbox');
-  // Blur bg shown only in letterbox mode + when an image is up.
   if (imageVisible && fitMode === 'letterbox' && currentImageFilename) {
     previewBg.src = `/api/images/${encodeURIComponent(currentImageFilename)}`;
     previewBg.classList.remove('hidden');
@@ -329,6 +329,17 @@ function makeSlideCard(filename) {
     if (!confirm(`Delete ${filename}?`)) return;
     await fetch(`/api/images/${encodeURIComponent(filename)}`, { method: 'DELETE' });
     refreshImages();
+  });
+
+  const fitBtn = node.querySelector('.fit-toggle');
+  const fitValueEl = node.querySelector('.fit-value');
+  fitBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const cur = node.dataset.fitMode || 'crop';
+    const next = cur === 'crop' ? 'letterbox' : 'crop';
+    node.dataset.fitMode = next;
+    fitValueEl.textContent = next === 'crop' ? 'Crop' : 'Letterbox';
+    if (currentImageFilename === node.dataset.filename) applyFitToPreview();
   });
 
   const replaceInput = node.querySelector('.replace-input');
@@ -536,6 +547,9 @@ function startRename(node, nameDiv) {
 function playVideo(name) {
   currentVideo = name;
   currentImageFilename = null;
+  // Clear slide selection — the fit toggle should only show for the slide
+  // whose image is actually in the preview.
+  slideList.querySelectorAll('.slide-card.selected').forEach(c => c.classList.remove('selected'));
   const url = `/api/output/${encodeURIComponent(name)}`;
   previewImg.classList.add('hidden');
   previewPlaceholder.classList.add('hidden');
@@ -560,7 +574,10 @@ function highlightThumb(name) {
 generateBtn.addEventListener('click', async () => {
   const cards = [...slideList.querySelectorAll('.slide-card')];
   if (!cards.length) return;
-  const filenames = cards.map(c => c.dataset.filename);
+  const slides = cards.map(c => ({
+    filename: c.dataset.filename,
+    fit_mode: c.dataset.fitMode || 'crop',
+  }));
 
   generateBtn.disabled = true;
   loadingOverlay.classList.remove('hidden');
@@ -573,11 +590,10 @@ generateBtn.addEventListener('click', async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        filenames,
+        slides,
         duration: parseFloat(durationRange.value),
         speed,
         ratio: selectedRatio,
-        fit_mode: fitMode,
       })
     });
     if (!res.ok) throw new Error(await res.text());
