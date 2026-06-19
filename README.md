@@ -6,6 +6,16 @@ Built for fashion / product image rolls where you want clean motion, predictable
 
 ---
 
+## Screenshots
+
+![Main UI — asset manager, controls, output gallery](docs/screenshots/01-hero.png)
+
+![Video playing — preview resizes to match each output's native aspect](docs/screenshots/02-video-playing.png)
+
+![Click any asset thumbnail to inspect it full-size in the preview pane](docs/screenshots/04-image-preview.png)
+
+---
+
 ## Features
 
 **Asset manager**
