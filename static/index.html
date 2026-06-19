@@ -15,17 +15,31 @@
   input[type="range"] { accent-color: #2563eb; }
   .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-  .speed-btn.active, .ratio-btn.active, .fit-btn.active { background: #0f172a; color: white; }
+  .speed-btn.active, .ratio-btn.active { background: #0f172a; color: white; }
+  .slide-card .fit-section { display: none; }
+  .slide-card.selected .fit-section { display: flex; }
+  /* Index vs checkbox: index by default; checkbox on hover or while a
+     selection is active (body.selection-mode). */
+  .slide-card .card-check { display: none; accent-color: #2563eb; }
+  .slide-card:hover .index-num,
+  body.selection-mode .slide-card .index-num { display: none; }
+  .slide-card:hover .card-check,
+  body.selection-mode .slide-card .card-check { display: inline-block; }
+  .slide-card.checked { background: #f0f9ff; border-color: #93c5fd; }
   #previewBox { transition: width 0.25s ease, height 0.25s ease; }
   /* Preview image: crop fills, letterbox contains */
   #previewImg.fit-crop {
     width: 100%; height: 100%; max-width: none; max-height: none;
     object-fit: cover;
+    cursor: move;
+    user-select: none;
+    -webkit-user-drag: none;
   }
   #previewImg.fit-letterbox {
     max-width: 100%; max-height: 100%;
     object-fit: contain;
   }
+  #previewImg.dragging { cursor: grabbing; }
   /* Blurred background — only visible in letterbox mode while previewing an image */
   #previewBg {
     position: absolute; inset: 0;
@@ -68,20 +82,22 @@
       </label>
     </div>
 
-    <div class="px-5 py-3 border-b border-slate-200 bg-slate-50/60">
-      <div class="text-xs text-slate-600 mb-1.5">Fit mode</div>
-      <div id="fitToggle" class="grid grid-cols-2 gap-1 bg-white border border-slate-200 rounded-md p-0.5">
-        <button data-value="crop" class="fit-btn text-xs py-1 rounded active">Crop</button>
-        <button data-value="letterbox" class="fit-btn text-xs py-1 rounded">Letterbox</button>
-      </div>
+    <div id="selectionBar" class="hidden px-5 py-2 border-b border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
+      <label class="flex items-center gap-2 cursor-pointer text-slate-700 select-none">
+        <input type="checkbox" id="selectAllCheck" class="w-3.5 h-3.5 cursor-pointer" />
+        <span><span id="selectionCount" class="font-medium">0</span> selected</span>
+      </label>
+      <button id="deleteSelectedBtn" class="text-red-600 hover:text-red-700 hover:bg-red-50 font-medium px-2 py-1 rounded">
+        Delete
+      </button>
     </div>
 
     <div id="slideList" class="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1.5"></div>
 
-    <div class="px-5 py-4 border-t border-slate-200 bg-slate-50 space-y-3">
+    <div class="px-5 py-4 border-t border-slate-200 bg-slate-200 space-y-3">
       <div>
         <div class="text-xs text-slate-600 mb-1">Output ratio</div>
-        <div id="ratioToggle" class="grid grid-cols-5 gap-1 bg-white border border-slate-200 rounded-md p-0.5">
+        <div id="ratioToggle" class="grid grid-cols-5 gap-1 bg-white border border-slate-300 rounded-md p-0.5">
           <button data-value="1:1" class="ratio-btn text-[11px] py-1 rounded">1:1</button>
           <button data-value="16:9" class="ratio-btn text-[11px] py-1 rounded active">16:9</button>
           <button data-value="9:16" class="ratio-btn text-[11px] py-1 rounded">9:16</button>
@@ -100,7 +116,7 @@
 
       <div>
         <div class="text-xs text-slate-600 mb-1">Camera speed</div>
-        <div id="speedToggle" class="grid grid-cols-3 gap-1 bg-white border border-slate-200 rounded-md p-0.5">
+        <div id="speedToggle" class="grid grid-cols-3 gap-1 bg-white border border-slate-300 rounded-md p-0.5">
           <button data-value="slow" class="speed-btn text-xs py-1 rounded">Slow</button>
           <button data-value="medium" class="speed-btn text-xs py-1 rounded active">Medium</button>
           <button data-value="fast" class="speed-btn text-xs py-1 rounded">Fast</button>
@@ -146,17 +162,29 @@
 
 <!-- Slide card -->
 <template id="slideTemplate">
-  <div class="slide-card group relative bg-white border border-slate-200 rounded-lg p-2 cursor-grab flex items-center gap-3 hover:border-slate-300">
-    <div class="index-num text-[11px] text-slate-400 w-5 text-center tabular-nums select-none">1</div>
-    <img class="thumb w-14 h-14 rounded object-cover bg-slate-100 flex-shrink-0 pointer-events-none" />
-    <div class="filename flex-1 min-w-0 text-xs font-medium text-slate-700 truncate"></div>
-    <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-      <label class="p-1.5 rounded hover:bg-slate-100 text-slate-500 cursor-pointer" title="Replace">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>
-        <input type="file" accept="image/*" class="hidden replace-input">
-      </label>
-      <button class="delete-btn p-1.5 rounded hover:bg-red-50 text-slate-500 hover:text-red-600" title="Delete">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+  <div class="slide-card group relative bg-white border border-slate-200 rounded-lg p-2 cursor-grab hover:border-slate-300" data-fit-mode="crop" data-offset-x="0.5" data-offset-y="0.5">
+    <div class="flex items-center gap-3">
+      <div class="w-5 flex items-center justify-center flex-shrink-0">
+        <span class="index-num text-[11px] text-slate-400 tabular-nums select-none">1</span>
+        <input type="checkbox" class="card-check w-3.5 h-3.5 cursor-pointer" />
+      </div>
+      <img class="thumb w-14 h-14 rounded object-cover bg-slate-100 flex-shrink-0 pointer-events-none" />
+      <div class="filename flex-1 min-w-0 text-xs font-medium text-slate-700 truncate"></div>
+      <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <label class="p-1.5 rounded hover:bg-slate-100 text-slate-500 cursor-pointer" title="Replace">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>
+          <input type="file" accept="image/*" class="hidden replace-input">
+        </label>
+        <button class="delete-btn p-1.5 rounded hover:bg-red-50 text-slate-500 hover:text-red-600" title="Delete">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="fit-section mt-2 pt-2 border-t border-slate-100 items-center justify-between gap-2">
+      <span class="text-[10px] uppercase tracking-wide text-slate-400 font-medium">Fit mode</span>
+      <button class="fit-toggle text-[11px] px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium inline-flex items-center gap-1.5" title="Click to switch crop / letterbox">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17l-4-4 4-4M17 7l4 4-4 4"/></svg>
+        <span class="fit-value">Crop</span>
       </button>
     </div>
   </div>
@@ -197,20 +225,23 @@ const durationRange = $('durationRange');
 const durationLabel = $('durationLabel');
 const speedToggle = $('speedToggle');
 const ratioToggle = $('ratioToggle');
-const fitToggle = $('fitToggle');
 const previewBox = $('previewBox');
 const previewBg = $('previewBg');
 const videoGallery = $('videoGallery');
 const videoGalleryWrap = $('videoGalleryWrap');
 const thumbTemplate = $('thumbTemplate');
+const selectionBar = $('selectionBar');
+const selectAllCheck = $('selectAllCheck');
+const selectionCount = $('selectionCount');
+const deleteSelectedBtn = $('deleteSelectedBtn');
 
 let imgLimit = 30;
 let speed = 'medium';
 let selectedRatio = '16:9';
 let previewAspect = '16:9';
-let fitMode = 'crop';
 let currentVideo = null;
 let currentImageFilename = null;
+let pendingGenId = null;
 
 durationRange.addEventListener('input', () => {
   durationLabel.textContent = `${parseFloat(durationRange.value).toFixed(1)}s`;
@@ -236,20 +267,33 @@ ratioToggle.addEventListener('click', e => {
   }
 });
 
-fitToggle.addEventListener('click', e => {
-  const btn = e.target.closest('.fit-btn');
-  if (!btn) return;
-  fitMode = btn.dataset.value;
-  fitToggle.querySelectorAll('.fit-btn').forEach(b => b.classList.toggle('active', b === btn));
-  applyFitToPreview();
-});
+function getCurrentCard() {
+  if (!currentImageFilename) return null;
+  return [...slideList.querySelectorAll('.slide-card')]
+    .find(c => c.dataset.filename === currentImageFilename) || null;
+}
+
+function getCardFitMode(filename) {
+  if (!filename) return 'crop';
+  const card = [...slideList.querySelectorAll('.slide-card')]
+    .find(c => c.dataset.filename === filename);
+  return card?.dataset.fitMode || 'crop';
+}
 
 function applyFitToPreview() {
   // Only meaningful when an image is being previewed (not video, not placeholder).
   const imageVisible = !previewImg.classList.contains('hidden');
+  const fitMode = getCardFitMode(currentImageFilename);
   previewImg.classList.toggle('fit-crop', fitMode === 'crop');
   previewImg.classList.toggle('fit-letterbox', fitMode === 'letterbox');
-  // Blur bg shown only in letterbox mode + when an image is up.
+
+  // Apply this slide's crop offsets to object-position (ignored visually in
+  // letterbox mode, but kept so toggling back to crop restores the position).
+  const card = getCurrentCard();
+  const ox = parseFloat(card?.dataset.offsetX ?? 0.5);
+  const oy = parseFloat(card?.dataset.offsetY ?? 0.5);
+  previewImg.style.objectPosition = `${ox * 100}% ${oy * 100}%`;
+
   if (imageVisible && fitMode === 'letterbox' && currentImageFilename) {
     previewBg.src = `/api/images/${encodeURIComponent(currentImageFilename)}`;
     previewBg.classList.remove('hidden');
@@ -258,6 +302,61 @@ function applyFitToPreview() {
     previewBg.removeAttribute('src');
   }
 }
+
+// Drag-to-reposition the crop window when previewing an image in crop mode.
+(function setupCropDrag() {
+  let drag = null;
+
+  function computeOverflow() {
+    const r = previewBox.getBoundingClientRect();
+    const bw = r.width, bh = r.height;
+    const iw = previewImg.naturalWidth, ih = previewImg.naturalHeight;
+    if (!iw || !ih) return { ox: 0, oy: 0 };
+    const scale = Math.max(bw / iw, bh / ih);
+    return { ox: Math.max(0, iw * scale - bw), oy: Math.max(0, ih * scale - bh) };
+  }
+
+  previewImg.addEventListener('mousedown', e => {
+    if (!previewImg.classList.contains('fit-crop')) return;
+    const card = getCurrentCard();
+    if (!card) return;
+    const { ox, oy } = computeOverflow();
+    if (ox === 0 && oy === 0) return; // image already fits exactly, nothing to drag
+    drag = {
+      card,
+      startX: e.clientX,
+      startY: e.clientY,
+      startOX: parseFloat(card.dataset.offsetX ?? 0.5),
+      startOY: parseFloat(card.dataset.offsetY ?? 0.5),
+      overflowX: ox,
+      overflowY: oy,
+    };
+    previewImg.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    let nx = drag.startOX, ny = drag.startOY;
+    // Drag image LEFT (dx < 0) shifts visible window RIGHT, so offset_x increases.
+    // Use negative sign so the image visually follows the cursor.
+    if (drag.overflowX > 0) nx = Math.max(0, Math.min(1, drag.startOX - dx / drag.overflowX));
+    if (drag.overflowY > 0) ny = Math.max(0, Math.min(1, drag.startOY - dy / drag.overflowY));
+    drag.card.dataset.offsetX = nx.toFixed(4);
+    drag.card.dataset.offsetY = ny.toFixed(4);
+    previewImg.style.objectPosition = `${nx * 100}% ${ny * 100}%`;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!drag) return;
+    drag = null;
+    previewImg.classList.remove('dragging');
+  });
+
+  previewImg.addEventListener('dragstart', e => e.preventDefault()); // disable native image drag
+})();
 
 // ---------------- Dynamic preview sizing ----------------
 
@@ -307,6 +406,7 @@ async function refreshImages() {
   });
   updateStats();
   updateUploadAvail();
+  updateSelectionUI();
 }
 
 function makeSlideCard(filename) {
@@ -319,9 +419,16 @@ function makeSlideCard(filename) {
   nameEl.title = filename;
 
   node.addEventListener('click', e => {
-    if (e.target.closest('button') || e.target.closest('label')) return;
+    if (e.target.closest('button') || e.target.closest('label') || e.target.closest('input')) return;
     selectCard(node);
     showImage(filename);
+  });
+
+  const checkInput = node.querySelector('.card-check');
+  checkInput.addEventListener('click', e => e.stopPropagation());
+  checkInput.addEventListener('change', () => {
+    node.classList.toggle('checked', checkInput.checked);
+    updateSelectionUI();
   });
 
   node.querySelector('.delete-btn').addEventListener('click', async e => {
@@ -329,6 +436,17 @@ function makeSlideCard(filename) {
     if (!confirm(`Delete ${filename}?`)) return;
     await fetch(`/api/images/${encodeURIComponent(filename)}`, { method: 'DELETE' });
     refreshImages();
+  });
+
+  const fitBtn = node.querySelector('.fit-toggle');
+  const fitValueEl = node.querySelector('.fit-value');
+  fitBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const cur = node.dataset.fitMode || 'crop';
+    const next = cur === 'crop' ? 'letterbox' : 'crop';
+    node.dataset.fitMode = next;
+    fitValueEl.textContent = next === 'crop' ? 'Crop' : 'Letterbox';
+    if (currentImageFilename === node.dataset.filename) applyFitToPreview();
   });
 
   const replaceInput = node.querySelector('.replace-input');
@@ -373,6 +491,7 @@ function showImage(filename) {
   previewVideo.pause();
   previewVideo.classList.add('hidden');
   previewPlaceholder.classList.add('hidden');
+  loadingOverlay.classList.add('hidden');
   previewImg.src = `/api/images/${encodeURIComponent(filename)}?t=${Date.now()}`;
   previewImg.classList.remove('hidden');
   currentImageFilename = filename;
@@ -397,6 +516,62 @@ function updateUploadAvail() {
   uploadLabel.classList.toggle('cursor-pointer', !full);
   uploadLabel.title = full ? `Limit reached (${imgLimit})` : '';
 }
+
+function updateSelectionUI() {
+  const cards = [...slideList.querySelectorAll('.slide-card')];
+  const checked = cards.filter(c => c.querySelector('.card-check')?.checked);
+  const n = checked.length;
+  if (n > 0) {
+    document.body.classList.add('selection-mode');
+    selectionBar.classList.remove('hidden');
+    selectionCount.textContent = n;
+    selectAllCheck.checked = n === cards.length;
+    selectAllCheck.indeterminate = n > 0 && n < cards.length;
+  } else {
+    document.body.classList.remove('selection-mode');
+    selectionBar.classList.add('hidden');
+    selectAllCheck.checked = false;
+    selectAllCheck.indeterminate = false;
+  }
+}
+
+selectAllCheck.addEventListener('change', () => {
+  const cards = [...slideList.querySelectorAll('.slide-card')];
+  cards.forEach(c => {
+    const cb = c.querySelector('.card-check');
+    if (cb) {
+      cb.checked = selectAllCheck.checked;
+      c.classList.toggle('checked', cb.checked);
+    }
+  });
+  updateSelectionUI();
+});
+
+deleteSelectedBtn.addEventListener('click', async () => {
+  const cards = [...slideList.querySelectorAll('.slide-card')];
+  const filenames = cards
+    .filter(c => c.querySelector('.card-check')?.checked)
+    .map(c => c.dataset.filename);
+  if (!filenames.length) return;
+  const preview = filenames.slice(0, 5).join(', ') + (filenames.length > 5 ? `, … (+${filenames.length - 5} more)` : '');
+  if (!confirm(`Delete ${filenames.length} image(s)?\n\n${preview}`)) return;
+  const res = await fetch('/api/images/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filenames }),
+  });
+  if (!res.ok) {
+    alert('Bulk delete failed: ' + (await res.text()));
+    return;
+  }
+  // If the previewed image was deleted, clear the preview.
+  if (currentImageFilename && filenames.includes(currentImageFilename)) {
+    currentImageFilename = null;
+    previewImg.classList.add('hidden');
+    if (!currentVideo) previewPlaceholder.classList.remove('hidden');
+  }
+  refreshImages();
+});
 
 uploadInput.addEventListener('change', async e => {
   const currentCount = slideList.querySelectorAll('.slide-card').length;
@@ -423,22 +598,21 @@ uploadInput.addEventListener('change', async e => {
 async function refreshOutputs(selectName) {
   const res = await fetch('/api/outputs');
   const data = await res.json();
+  // Preserve any in-progress placeholder across refreshes (delete/rename/etc.).
+  const pendingNode = videoGallery.querySelector('.video-thumb.pending');
   videoGallery.innerHTML = '';
   data.outputs.forEach(name => videoGallery.appendChild(makeThumb(name)));
-  videoGalleryWrap.classList.toggle('hidden', data.outputs.length === 0);
+  if (pendingNode) videoGallery.appendChild(pendingNode);
+  videoGalleryWrap.classList.toggle('hidden', data.outputs.length === 0 && !pendingNode);
 
   if (selectName && data.outputs.includes(selectName)) {
     playVideo(selectName);
-  } else if (currentVideo && data.outputs.includes(currentVideo)) {
-    highlightThumb(currentVideo);
-  } else {
-    currentVideo = null;
-  }
-
-  if (data.outputs.length > 0) {
-    generateBtn.textContent = 'Regenerate Slideshow';
-  } else {
-    generateBtn.textContent = 'Generate Slideshow';
+  } else if (currentVideo) {
+    if (data.outputs.includes(currentVideo) || currentVideo === pendingGenId) {
+      highlightThumb(currentVideo);
+    } else {
+      currentVideo = null;
+    }
   }
 }
 
@@ -536,11 +710,15 @@ function startRename(node, nameDiv) {
 function playVideo(name) {
   currentVideo = name;
   currentImageFilename = null;
+  // Clear slide selection — the fit toggle should only show for the slide
+  // whose image is actually in the preview.
+  slideList.querySelectorAll('.slide-card.selected').forEach(c => c.classList.remove('selected'));
   const url = `/api/output/${encodeURIComponent(name)}`;
   previewImg.classList.add('hidden');
   previewPlaceholder.classList.add('hidden');
   previewBg.classList.add('hidden');
   previewBg.removeAttribute('src');
+  loadingOverlay.classList.add('hidden');
   if (!previewVideo.src.endsWith(url)) previewVideo.src = url;
   previewVideo.classList.remove('hidden');
   previewVideo.play().catch(() => {});
@@ -557,37 +735,90 @@ function highlightThumb(name) {
 
 // ---------------- Generate ----------------
 
+function makePendingThumb(id) {
+  const node = document.createElement('div');
+  node.className = 'video-thumb pending group relative w-36 flex-shrink-0 rounded-lg overflow-hidden border-2 border-transparent cursor-pointer hover:border-slate-300 bg-white shadow-sm';
+  node.dataset.video = id;
+  node.dataset.pending = 'true';
+  node.innerHTML = `
+    <div class="w-full aspect-video flex items-center justify-center bg-slate-100">
+      <svg class="animate-spin h-5 w-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+        <circle cx="12" cy="12" r="9" opacity="0.3"/>
+        <path d="M21 12a9 9 0 0 0-9-9"/>
+      </svg>
+    </div>
+    <div class="text-[11px] px-2 py-1.5 bg-white text-slate-700 truncate text-center">Generating…</div>
+  `;
+  node.addEventListener('click', () => selectPending(id));
+  return node;
+}
+
+function selectPending(id) {
+  currentVideo = id;
+  currentImageFilename = null;
+  slideList.querySelectorAll('.slide-card.selected').forEach(c => c.classList.remove('selected'));
+  previewImg.classList.add('hidden');
+  previewVideo.pause();
+  previewVideo.classList.add('hidden');
+  previewPlaceholder.classList.add('hidden');
+  previewBg.classList.add('hidden');
+  previewBg.removeAttribute('src');
+  loadingOverlay.classList.remove('hidden');
+  highlightThumb(id);
+}
+
 generateBtn.addEventListener('click', async () => {
   const cards = [...slideList.querySelectorAll('.slide-card')];
   if (!cards.length) return;
-  const filenames = cards.map(c => c.dataset.filename);
+  const slides = cards.map(c => ({
+    filename: c.dataset.filename,
+    fit_mode: c.dataset.fitMode || 'crop',
+    offset_x: parseFloat(c.dataset.offsetX ?? 0.5),
+    offset_y: parseFloat(c.dataset.offsetY ?? 0.5),
+  }));
 
   generateBtn.disabled = true;
-  loadingOverlay.classList.remove('hidden');
-  previewImg.classList.add('hidden');
-  previewVideo.classList.add('hidden');
-  previewPlaceholder.classList.add('hidden');
+
+  // Drop a placeholder thumb on the right of the gallery immediately. The user
+  // can keep clicking around other videos; the loading state only shows when
+  // the placeholder itself is the selected item.
+  const id = `pending_${Date.now()}`;
+  pendingGenId = id;
+  const pendingThumb = makePendingThumb(id);
+  videoGallery.appendChild(pendingThumb);
+  videoGalleryWrap.classList.remove('hidden');
+  selectPending(id);
 
   try {
     const res = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        filenames,
+        slides,
         duration: parseFloat(durationRange.value),
         speed,
         ratio: selectedRatio,
-        fit_mode: fitMode,
       })
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
-    await refreshOutputs(data.video);
+    const wasViewingPending = currentVideo === id;
+    pendingGenId = null;
+    pendingThumb.remove();
+    // If the user is still parked on the placeholder, auto-play the new video.
+    // Otherwise keep them on whatever they were watching.
+    await refreshOutputs(wasViewingPending ? data.video : undefined);
   } catch (err) {
+    const wasViewingPending = currentVideo === id;
+    pendingGenId = null;
+    pendingThumb.remove();
+    if (wasViewingPending) {
+      currentVideo = null;
+      loadingOverlay.classList.add('hidden');
+      previewPlaceholder.classList.remove('hidden');
+    }
     alert('Generate failed: ' + err.message);
-    if (!currentVideo) previewPlaceholder.classList.remove('hidden');
   } finally {
-    loadingOverlay.classList.add('hidden');
     generateBtn.disabled = false;
   }
 });

@@ -117,17 +117,28 @@ def get_blur_composite_filter(out_w, out_h):
     )
 
 
-def get_crop_to_ratio(w, h, out_w, out_h):
+def get_crop_to_ratio(w, h, out_w, out_h, offset_x=0.5, offset_y=0.5):
+    """
+    Center-crop scaled by per-axis offsets in [0, 1]:
+      0   -> crop window flush left/top
+      0.5 -> centered (default)
+      1   -> crop window flush right/bottom
+    The unused axis (one that already matches the output ratio) ignores its offset.
+    """
     target_ratio = out_w / out_h
     img_ratio = w / h
     if abs(img_ratio - target_ratio) < 0.01:
         return None
+    offset_x = max(0.0, min(1.0, offset_x))
+    offset_y = max(0.0, min(1.0, offset_y))
     if img_ratio > target_ratio:
         cw, ch = int(h * target_ratio), h
-        cx, cy = int((w - cw) / 2), 0
+        cx = int((w - cw) * offset_x)
+        cy = 0
     else:
         cw, ch = w, int(w / target_ratio)
-        cx, cy = 0, int((h - ch) / 2)
+        cx = 0
+        cy = int((h - ch) * offset_y)
     return f"crop={cw}:{ch}:{cx}:{cy}"
 
 
@@ -166,7 +177,8 @@ def resolve_direction(direction, use_blur, img_landscape, out_landscape):
     return random.choice(pool)
 
 
-def render_clip(image_path, duration, direction, speed, output_path, resolution, fit_mode="crop"):
+def render_clip(image_path, duration, direction, speed, output_path, resolution,
+                 fit_mode="crop", offset_x=0.5, offset_y=0.5):
     out_w, out_h = resolution
     w, h = get_image_dimensions(image_path)
     use_blur = needs_blur_composite(w, h, out_w, out_h, fit_mode)
@@ -180,7 +192,7 @@ def render_clip(image_path, duration, direction, speed, output_path, resolution,
         vf = f"{blur},scale=iw*3:ih*3:flags=lanczos,{zoompan},format={PIX_FMT}"
     else:
         scale = get_optimal_scale_factor(w, h)
-        crop = get_crop_to_ratio(w, h, out_w, out_h)
+        crop = get_crop_to_ratio(w, h, out_w, out_h, offset_x, offset_y)
         scale_filter = f"scale=iw*{scale}:ih*{scale}:flags=lanczos"
         vf = f"{crop + ',' if crop else ''}{scale_filter},{zoompan},format={PIX_FMT}"
 
@@ -215,11 +227,12 @@ def concat_clips(clip_paths, output_path):
         raise RuntimeError(f"ffmpeg concat failed: {result.stderr[-500:]}")
 
 
-def build_slideshow(slides, output_path, work_dir, ratio="16:9", fit_mode="crop"):
+def build_slideshow(slides, output_path, work_dir, ratio="16:9"):
     """
-    slides: list of {path, duration, direction, speed}
+    slides: list of {path, duration, direction, speed, fit_mode}
     ratio: one of RATIO_RESOLUTIONS keys
-    fit_mode: 'crop' (default) | 'letterbox' | 'smart'
+
+    fit_mode is now per-slide (read from each cfg), defaulting to 'crop'.
     """
     resolution = get_resolution(ratio)
     work_dir = Path(work_dir)
@@ -236,7 +249,9 @@ def build_slideshow(slides, output_path, work_dir, ratio="16:9", fit_mode="crop"
                 cfg.get("speed", "medium"),
                 clip_path,
                 resolution,
-                fit_mode,
+                cfg.get("fit_mode", "crop"),
+                float(cfg.get("offset_x", 0.5)),
+                float(cfg.get("offset_y", 0.5)),
             )
             resolved.append(direction)
             clip_paths.append(clip_path)
