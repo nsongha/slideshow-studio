@@ -15,8 +15,27 @@
   input[type="range"] { accent-color: #2563eb; }
   .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-  .speed-btn.active, .ratio-btn.active { background: #0f172a; color: white; }
+  .speed-btn.active, .ratio-btn.active, .fit-btn.active { background: #0f172a; color: white; }
   #previewBox { transition: width 0.25s ease, height 0.25s ease; }
+  /* Preview image: crop fills, letterbox contains */
+  #previewImg.fit-crop {
+    width: 100%; height: 100%; max-width: none; max-height: none;
+    object-fit: cover;
+  }
+  #previewImg.fit-letterbox {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+  }
+  /* Blurred background — only visible in letterbox mode while previewing an image */
+  #previewBg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    filter: blur(40px) brightness(0.85) saturate(0.6);
+    transform: scale(1.1); /* hide blur edge artifacts */
+    z-index: 0;
+  }
+  #previewBox > :not(#previewBg) { position: relative; z-index: 1; }
   .video-thumb.playing { border-color: #2563eb; }
   .video-thumb.playing .playing-indicator { display: inline-flex; }
   .rename-input {
@@ -47,6 +66,14 @@
         Upload
         <input id="uploadInput" type="file" accept="image/*" multiple class="hidden">
       </label>
+    </div>
+
+    <div class="px-5 py-3 border-b border-slate-200 bg-slate-50/60">
+      <div class="text-xs text-slate-600 mb-1.5">Fit mode</div>
+      <div id="fitToggle" class="grid grid-cols-2 gap-1 bg-white border border-slate-200 rounded-md p-0.5">
+        <button data-value="crop" class="fit-btn text-xs py-1 rounded active">Crop</button>
+        <button data-value="letterbox" class="fit-btn text-xs py-1 rounded">Letterbox</button>
+      </div>
     </div>
 
     <div id="slideList" class="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1.5"></div>
@@ -94,8 +121,9 @@
   <main class="flex-1 flex flex-col bg-slate-100 overflow-hidden">
     <div class="flex-1 px-6 pt-6 pb-3 flex items-center justify-center overflow-hidden">
       <div id="previewBox" class="bg-black rounded-lg shadow-lg flex items-center justify-center overflow-hidden relative">
+        <img id="previewBg" class="hidden" alt="" />
         <div id="previewPlaceholder" class="text-slate-400 text-sm">Generate a slideshow to begin</div>
-        <img id="previewImg" class="hidden max-w-full max-h-full object-contain" />
+        <img id="previewImg" class="hidden fit-crop" />
         <video id="previewVideo" class="hidden max-w-full max-h-full" controls></video>
 
         <div id="loadingOverlay" class="hidden absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white gap-3">
@@ -169,7 +197,9 @@ const durationRange = $('durationRange');
 const durationLabel = $('durationLabel');
 const speedToggle = $('speedToggle');
 const ratioToggle = $('ratioToggle');
+const fitToggle = $('fitToggle');
 const previewBox = $('previewBox');
+const previewBg = $('previewBg');
 const videoGallery = $('videoGallery');
 const videoGalleryWrap = $('videoGalleryWrap');
 const thumbTemplate = $('thumbTemplate');
@@ -178,7 +208,9 @@ let imgLimit = 30;
 let speed = 'medium';
 let selectedRatio = '16:9';
 let previewAspect = '16:9';
+let fitMode = 'crop';
 let currentVideo = null;
+let currentImageFilename = null;
 
 durationRange.addEventListener('input', () => {
   durationLabel.textContent = `${parseFloat(durationRange.value).toFixed(1)}s`;
@@ -203,6 +235,29 @@ ratioToggle.addEventListener('click', e => {
     fitPreview();
   }
 });
+
+fitToggle.addEventListener('click', e => {
+  const btn = e.target.closest('.fit-btn');
+  if (!btn) return;
+  fitMode = btn.dataset.value;
+  fitToggle.querySelectorAll('.fit-btn').forEach(b => b.classList.toggle('active', b === btn));
+  applyFitToPreview();
+});
+
+function applyFitToPreview() {
+  // Only meaningful when an image is being previewed (not video, not placeholder).
+  const imageVisible = !previewImg.classList.contains('hidden');
+  previewImg.classList.toggle('fit-crop', fitMode === 'crop');
+  previewImg.classList.toggle('fit-letterbox', fitMode === 'letterbox');
+  // Blur bg shown only in letterbox mode + when an image is up.
+  if (imageVisible && fitMode === 'letterbox' && currentImageFilename) {
+    previewBg.src = `/api/images/${encodeURIComponent(currentImageFilename)}`;
+    previewBg.classList.remove('hidden');
+  } else {
+    previewBg.classList.add('hidden');
+    previewBg.removeAttribute('src');
+  }
+}
 
 // ---------------- Dynamic preview sizing ----------------
 
@@ -320,8 +375,10 @@ function showImage(filename) {
   previewPlaceholder.classList.add('hidden');
   previewImg.src = `/api/images/${encodeURIComponent(filename)}?t=${Date.now()}`;
   previewImg.classList.remove('hidden');
+  currentImageFilename = filename;
   previewAspect = selectedRatio;
   fitPreview();
+  applyFitToPreview();
 }
 
 function updateStats() {
@@ -478,9 +535,12 @@ function startRename(node, nameDiv) {
 
 function playVideo(name) {
   currentVideo = name;
+  currentImageFilename = null;
   const url = `/api/output/${encodeURIComponent(name)}`;
   previewImg.classList.add('hidden');
   previewPlaceholder.classList.add('hidden');
+  previewBg.classList.add('hidden');
+  previewBg.removeAttribute('src');
   if (!previewVideo.src.endsWith(url)) previewVideo.src = url;
   previewVideo.classList.remove('hidden');
   previewVideo.play().catch(() => {});
@@ -517,6 +577,7 @@ generateBtn.addEventListener('click', async () => {
         duration: parseFloat(durationRange.value),
         speed,
         ratio: selectedRatio,
+        fit_mode: fitMode,
       })
     });
     if (!res.ok) throw new Error(await res.text());

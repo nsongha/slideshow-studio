@@ -35,6 +35,7 @@ class GenerateRequest(BaseModel):
     duration: float = 4.0
     speed: str = "medium"
     ratio: str = "16:9"
+    fit_mode: str = "crop"
 
 
 class RenameRequest(BaseModel):
@@ -141,6 +142,8 @@ def generate(req: GenerateRequest):
         raise HTTPException(400, "No slides provided")
     if req.ratio not in slideshow.RATIO_RESOLUTIONS:
         raise HTTPException(400, f"Invalid ratio: {req.ratio}")
+    if req.fit_mode not in ("crop", "letterbox", "smart"):
+        raise HTTPException(400, f"Invalid fit_mode: {req.fit_mode}")
 
     configs = []
     for name in req.filenames:
@@ -159,12 +162,20 @@ def generate(req: GenerateRequest):
     work_dir = WORK_DIR / uuid.uuid4().hex[:8]
 
     try:
-        directions = slideshow.build_slideshow(configs, output_path, work_dir, ratio=req.ratio)
+        directions = slideshow.build_slideshow(
+            configs, output_path, work_dir,
+            ratio=req.ratio, fit_mode=req.fit_mode,
+        )
     finally:
         if work_dir.exists():
             shutil.rmtree(work_dir, ignore_errors=True)
 
-    return {"video": output_name, "directions": directions, "ratio": req.ratio}
+    return {
+        "video": output_name,
+        "directions": directions,
+        "ratio": req.ratio,
+        "fit_mode": req.fit_mode,
+    }
 
 
 @app.get("/api/outputs")

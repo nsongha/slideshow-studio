@@ -131,8 +131,17 @@ def get_crop_to_ratio(w, h, out_w, out_h):
     return f"crop={cw}:{ch}:{cx}:{cy}"
 
 
-def needs_blur_composite(img_w, img_h, out_w, out_h):
-    """True when image and output ratios differ too much to crop cleanly."""
+def needs_blur_composite(img_w, img_h, out_w, out_h, fit_mode="crop"):
+    """
+    Pick blur composite (letterbox) vs hard crop.
+    - 'crop': always center-crop to fill the frame (may cut off subject).
+    - 'letterbox': always letterbox with a blurred bg (preserves full image).
+    - 'smart': crop when ratios are close, letterbox when they diverge.
+    """
+    if fit_mode == "crop":
+        return False
+    if fit_mode == "letterbox":
+        return True
     img_ratio = img_w / img_h
     out_ratio = out_w / out_h
     diff = abs(img_ratio - out_ratio) / max(img_ratio, out_ratio)
@@ -157,10 +166,10 @@ def resolve_direction(direction, use_blur, img_landscape, out_landscape):
     return random.choice(pool)
 
 
-def render_clip(image_path, duration, direction, speed, output_path, resolution):
+def render_clip(image_path, duration, direction, speed, output_path, resolution, fit_mode="crop"):
     out_w, out_h = resolution
     w, h = get_image_dimensions(image_path)
-    use_blur = needs_blur_composite(w, h, out_w, out_h)
+    use_blur = needs_blur_composite(w, h, out_w, out_h, fit_mode)
     direction = resolve_direction(direction, use_blur, w > h, out_w > out_h)
     zoom_value = SPEED_PRESETS.get(speed, SPEED_PRESETS["medium"])
     zoompan = generate_zoompan_filter(direction, duration, FPS, zoom_value, resolution)
@@ -206,10 +215,11 @@ def concat_clips(clip_paths, output_path):
         raise RuntimeError(f"ffmpeg concat failed: {result.stderr[-500:]}")
 
 
-def build_slideshow(slides, output_path, work_dir, ratio="16:9"):
+def build_slideshow(slides, output_path, work_dir, ratio="16:9", fit_mode="crop"):
     """
     slides: list of {path, duration, direction, speed}
-    ratio:  one of RATIO_RESOLUTIONS keys
+    ratio: one of RATIO_RESOLUTIONS keys
+    fit_mode: 'crop' (default) | 'letterbox' | 'smart'
     """
     resolution = get_resolution(ratio)
     work_dir = Path(work_dir)
@@ -226,6 +236,7 @@ def build_slideshow(slides, output_path, work_dir, ratio="16:9"):
                 cfg.get("speed", "medium"),
                 clip_path,
                 resolution,
+                fit_mode,
             )
             resolved.append(direction)
             clip_paths.append(clip_path)
