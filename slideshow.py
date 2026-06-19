@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 
-FPS = 30
+FPS = 60
 PRESET = "fast"
 CRF = 23
 PIX_FMT = "yuv420p"
@@ -70,36 +70,44 @@ def get_optimal_scale_factor(w, h, target_min=6000):
 
 
 def generate_zoompan_filter(direction, duration, fps, zoom_value, resolution):
+    """
+    Cubic ease-in-out ("smoothstep", 3p²-2p³) over progress p = on/frames.
+    Stored in var 0 via st/ld so the polynomial is evaluated once per frame.
+    Compared to linear, ease-in-out adds a soft start/stop — feels filmic
+    instead of robotic, and hides the boundary at slide cuts.
+    """
     frames = int(duration * fps)
     zmin = 1.0
     res = f"{resolution[0]}x{resolution[1]}"
+    # After this prefix, ld(0) = eased progress ∈ [0,1].
+    eased = f"st(0,on/{frames});st(0,3*ld(0)*ld(0)-2*ld(0)*ld(0)*ld(0))"
 
     if direction == "zoom_in_center":
-        z = f"'{zmin}+({zoom_value - zmin})*on/{frames}'"
+        z = f"'{eased};{zmin}+({zoom_value - zmin})*ld(0)'"
         x = "'iw/2-(iw/zoom/2)'"
         y = "'ih/2-(ih/zoom/2)'"
     elif direction == "zoom_out_center":
-        z = f"'{zoom_value}-({zoom_value - zmin})*on/{frames}'"
+        z = f"'{eased};{zoom_value}-({zoom_value - zmin})*ld(0)'"
         x = "'iw/2-(iw/zoom/2)'"
         y = "'ih/2-(ih/zoom/2)'"
     elif direction == "pan_left_to_right":
         z = f"'{zoom_value}'"
-        x = f"'(iw-iw/zoom)*on/{frames}'"
+        x = f"'{eased};(iw-iw/zoom)*ld(0)'"
         y = "'ih/2-(ih/zoom/2)'"
     elif direction == "pan_right_to_left":
         z = f"'{zoom_value}'"
-        x = f"'(iw-iw/zoom)*(1-on/{frames})'"
+        x = f"'{eased};(iw-iw/zoom)*(1-ld(0))'"
         y = "'ih/2-(ih/zoom/2)'"
     elif direction == "pan_top_to_bottom":
         z = f"'{zoom_value}'"
         x = "'iw/2-(iw/zoom/2)'"
-        y = f"'(ih-ih/zoom)*on/{frames}'"
+        y = f"'{eased};(ih-ih/zoom)*ld(0)'"
     elif direction == "pan_bottom_to_top":
         z = f"'{zoom_value}'"
         x = "'iw/2-(iw/zoom/2)'"
-        y = f"'(ih-ih/zoom)*(1-on/{frames})'"
+        y = f"'{eased};(ih-ih/zoom)*(1-ld(0))'"
     else:
-        z = f"'{zmin}+({zoom_value - zmin})*on/{frames}'"
+        z = f"'{eased};{zmin}+({zoom_value - zmin})*ld(0)'"
         x = "'iw/2-(iw/zoom/2)'"
         y = "'ih/2-(ih/zoom/2)'"
 
