@@ -216,6 +216,7 @@ let selectedRatio = '16:9';
 let previewAspect = '16:9';
 let currentVideo = null;
 let currentImageFilename = null;
+let pendingGenId = null;
 
 durationRange.addEventListener('input', () => {
   durationLabel.textContent = `${parseFloat(durationRange.value).toFixed(1)}s`;
@@ -457,6 +458,7 @@ function showImage(filename) {
   previewVideo.pause();
   previewVideo.classList.add('hidden');
   previewPlaceholder.classList.add('hidden');
+  loadingOverlay.classList.add('hidden');
   previewImg.src = `/api/images/${encodeURIComponent(filename)}?t=${Date.now()}`;
   previewImg.classList.remove('hidden');
   currentImageFilename = filename;
@@ -507,22 +509,21 @@ uploadInput.addEventListener('change', async e => {
 async function refreshOutputs(selectName) {
   const res = await fetch('/api/outputs');
   const data = await res.json();
+  // Preserve any in-progress placeholder across refreshes (delete/rename/etc.).
+  const pendingNode = videoGallery.querySelector('.video-thumb.pending');
   videoGallery.innerHTML = '';
   data.outputs.forEach(name => videoGallery.appendChild(makeThumb(name)));
-  videoGalleryWrap.classList.toggle('hidden', data.outputs.length === 0);
+  if (pendingNode) videoGallery.appendChild(pendingNode);
+  videoGalleryWrap.classList.toggle('hidden', data.outputs.length === 0 && !pendingNode);
 
   if (selectName && data.outputs.includes(selectName)) {
     playVideo(selectName);
-  } else if (currentVideo && data.outputs.includes(currentVideo)) {
-    highlightThumb(currentVideo);
-  } else {
-    currentVideo = null;
-  }
-
-  if (data.outputs.length > 0) {
-    generateBtn.textContent = 'Regenerate Slideshow';
-  } else {
-    generateBtn.textContent = 'Generate Slideshow';
+  } else if (currentVideo) {
+    if (data.outputs.includes(currentVideo) || currentVideo === pendingGenId) {
+      highlightThumb(currentVideo);
+    } else {
+      currentVideo = null;
+    }
   }
 }
 
@@ -628,6 +629,7 @@ function playVideo(name) {
   previewPlaceholder.classList.add('hidden');
   previewBg.classList.add('hidden');
   previewBg.removeAttribute('src');
+  loadingOverlay.classList.add('hidden');
   if (!previewVideo.src.endsWith(url)) previewVideo.src = url;
   previewVideo.classList.remove('hidden');
   previewVideo.play().catch(() => {});
@@ -644,6 +646,38 @@ function highlightThumb(name) {
 
 // ---------------- Generate ----------------
 
+function makePendingThumb(id) {
+  const node = document.createElement('div');
+  node.className = 'video-thumb pending group relative w-36 flex-shrink-0 rounded-lg overflow-hidden border-2 border-transparent cursor-pointer hover:border-slate-300 bg-white shadow-sm';
+  node.dataset.video = id;
+  node.dataset.pending = 'true';
+  node.innerHTML = `
+    <div class="w-full aspect-video flex items-center justify-center bg-slate-100">
+      <svg class="animate-spin h-5 w-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+        <circle cx="12" cy="12" r="9" opacity="0.3"/>
+        <path d="M21 12a9 9 0 0 0-9-9"/>
+      </svg>
+    </div>
+    <div class="text-[11px] px-2 py-1.5 bg-white text-slate-700 truncate text-center">Generating…</div>
+  `;
+  node.addEventListener('click', () => selectPending(id));
+  return node;
+}
+
+function selectPending(id) {
+  currentVideo = id;
+  currentImageFilename = null;
+  slideList.querySelectorAll('.slide-card.selected').forEach(c => c.classList.remove('selected'));
+  previewImg.classList.add('hidden');
+  previewVideo.pause();
+  previewVideo.classList.add('hidden');
+  previewPlaceholder.classList.add('hidden');
+  previewBg.classList.add('hidden');
+  previewBg.removeAttribute('src');
+  loadingOverlay.classList.remove('hidden');
+  highlightThumb(id);
+}
+
 generateBtn.addEventListener('click', async () => {
   const cards = [...slideList.querySelectorAll('.slide-card')];
   if (!cards.length) return;
@@ -655,10 +689,16 @@ generateBtn.addEventListener('click', async () => {
   }));
 
   generateBtn.disabled = true;
-  loadingOverlay.classList.remove('hidden');
-  previewImg.classList.add('hidden');
-  previewVideo.classList.add('hidden');
-  previewPlaceholder.classList.add('hidden');
+
+  // Drop a placeholder thumb on the right of the gallery immediately. The user
+  // can keep clicking around other videos; the loading state only shows when
+  // the placeholder itself is the selected item.
+  const id = `pending_${Date.now()}`;
+  pendingGenId = id;
+  const pendingThumb = makePendingThumb(id);
+  videoGallery.appendChild(pendingThumb);
+  videoGalleryWrap.classList.remove('hidden');
+  selectPending(id);
 
   try {
     const res = await fetch('/api/generate', {
@@ -673,12 +713,23 @@ generateBtn.addEventListener('click', async () => {
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
-    await refreshOutputs(data.video);
+    const wasViewingPending = currentVideo === id;
+    pendingGenId = null;
+    pendingThumb.remove();
+    // If the user is still parked on the placeholder, auto-play the new video.
+    // Otherwise keep them on whatever they were watching.
+    await refreshOutputs(wasViewingPending ? data.video : undefined);
   } catch (err) {
+    const wasViewingPending = currentVideo === id;
+    pendingGenId = null;
+    pendingThumb.remove();
+    if (wasViewingPending) {
+      currentVideo = null;
+      loadingOverlay.classList.add('hidden');
+      previewPlaceholder.classList.remove('hidden');
+    }
     alert('Generate failed: ' + err.message);
-    if (!currentVideo) previewPlaceholder.classList.remove('hidden');
   } finally {
-    loadingOverlay.classList.add('hidden');
     generateBtn.disabled = false;
   }
 });
