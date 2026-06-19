@@ -142,6 +142,21 @@ def delete_image(name: str):
     return {"ok": True}
 
 
+class BulkDeleteRequest(BaseModel):
+    filenames: List[str]
+
+
+@app.post("/api/images/bulk-delete")
+def bulk_delete_images(req: BulkDeleteRequest):
+    deleted = []
+    for name in req.filenames:
+        path = _safe_name(name)
+        if path.exists():
+            path.unlink()
+            deleted.append(name)
+    return {"deleted": deleted}
+
+
 @app.post("/api/generate")
 def generate(req: GenerateRequest):
     if not req.slides:
