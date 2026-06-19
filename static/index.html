@@ -15,7 +15,8 @@
   input[type="range"] { accent-color: #2563eb; }
   .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-  .speed-btn.active { background: #0f172a; color: white; }
+  .speed-btn.active, .ratio-btn.active { background: #0f172a; color: white; }
+  #previewBox { transition: width 0.25s ease, height 0.25s ease; }
   .video-thumb.playing { border-color: #2563eb; }
   .video-thumb.playing .playing-indicator { display: inline-flex; }
   .rename-input {
@@ -52,6 +53,17 @@
 
     <div class="px-5 py-4 border-t border-slate-200 bg-slate-50 space-y-3">
       <div>
+        <div class="text-xs text-slate-600 mb-1">Output ratio</div>
+        <div id="ratioToggle" class="grid grid-cols-5 gap-1 bg-white border border-slate-200 rounded-md p-0.5">
+          <button data-value="1:1" class="ratio-btn text-[11px] py-1 rounded">1:1</button>
+          <button data-value="16:9" class="ratio-btn text-[11px] py-1 rounded active">16:9</button>
+          <button data-value="9:16" class="ratio-btn text-[11px] py-1 rounded">9:16</button>
+          <button data-value="4:3" class="ratio-btn text-[11px] py-1 rounded">4:3</button>
+          <button data-value="3:4" class="ratio-btn text-[11px] py-1 rounded">3:4</button>
+        </div>
+      </div>
+
+      <div>
         <div class="flex justify-between text-xs text-slate-600 mb-1">
           <span>Duration per slide</span>
           <span id="durationLabel" class="tabular-nums font-medium text-slate-800">4.0s</span>
@@ -81,7 +93,7 @@
   <!-- Preview -->
   <main class="flex-1 flex flex-col bg-slate-100 overflow-hidden">
     <div class="flex-1 px-6 pt-6 pb-3 flex items-center justify-center overflow-hidden">
-      <div id="previewBox" class="w-full max-w-4xl aspect-video bg-black rounded-lg shadow-lg flex items-center justify-center overflow-hidden relative">
+      <div id="previewBox" class="bg-black rounded-lg shadow-lg flex items-center justify-center overflow-hidden relative">
         <div id="previewPlaceholder" class="text-slate-400 text-sm">Generate a slideshow to begin</div>
         <img id="previewImg" class="hidden max-w-full max-h-full object-contain" />
         <video id="previewVideo" class="hidden max-w-full max-h-full" controls></video>
@@ -156,12 +168,16 @@ const totalDuration = $('totalDuration');
 const durationRange = $('durationRange');
 const durationLabel = $('durationLabel');
 const speedToggle = $('speedToggle');
+const ratioToggle = $('ratioToggle');
+const previewBox = $('previewBox');
 const videoGallery = $('videoGallery');
 const videoGalleryWrap = $('videoGalleryWrap');
 const thumbTemplate = $('thumbTemplate');
 
 let imgLimit = 30;
 let speed = 'medium';
+let selectedRatio = '16:9';
+let previewAspect = '16:9';
 let currentVideo = null;
 
 durationRange.addEventListener('input', () => {
@@ -174,6 +190,47 @@ speedToggle.addEventListener('click', e => {
   if (!btn) return;
   speed = btn.dataset.value;
   speedToggle.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('active', b === btn));
+});
+
+ratioToggle.addEventListener('click', e => {
+  const btn = e.target.closest('.ratio-btn');
+  if (!btn) return;
+  selectedRatio = btn.dataset.value;
+  ratioToggle.querySelectorAll('.ratio-btn').forEach(b => b.classList.toggle('active', b === btn));
+  // Only re-fit the preview if a video isn't dictating the aspect.
+  if (previewVideo.classList.contains('hidden')) {
+    previewAspect = selectedRatio;
+    fitPreview();
+  }
+});
+
+// ---------------- Dynamic preview sizing ----------------
+
+function fitPreview() {
+  const parent = previewBox.parentElement;
+  const rect = parent.getBoundingClientRect();
+  const cs = getComputedStyle(parent);
+  const innerW = rect.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const innerH = rect.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  if (innerW <= 0 || innerH <= 0) return;
+
+  const [rw, rh] = previewAspect.split(':').map(Number);
+  if (!rw || !rh) return;
+  const ratio = rw / rh;
+
+  let bw = innerW, bh = innerW / ratio;
+  if (bh > innerH) { bh = innerH; bw = innerH * ratio; }
+  previewBox.style.width = `${bw}px`;
+  previewBox.style.height = `${bh}px`;
+}
+
+new ResizeObserver(fitPreview).observe(document.body);
+
+previewVideo.addEventListener('loadedmetadata', () => {
+  if (previewVideo.videoWidth && previewVideo.videoHeight) {
+    previewAspect = `${previewVideo.videoWidth}:${previewVideo.videoHeight}`;
+    fitPreview();
+  }
 });
 
 // ---------------- Images ----------------
@@ -263,6 +320,8 @@ function showImage(filename) {
   previewPlaceholder.classList.add('hidden');
   previewImg.src = `/api/images/${encodeURIComponent(filename)}?t=${Date.now()}`;
   previewImg.classList.remove('hidden');
+  previewAspect = selectedRatio;
+  fitPreview();
 }
 
 function updateStats() {
@@ -359,6 +418,8 @@ function makeThumb(name) {
       previewVideo.load();
       previewVideo.classList.add('hidden');
       previewPlaceholder.classList.remove('hidden');
+      previewAspect = selectedRatio;
+      fitPreview();
     }
     refreshOutputs();
   });
@@ -455,6 +516,7 @@ generateBtn.addEventListener('click', async () => {
         filenames,
         duration: parseFloat(durationRange.value),
         speed,
+        ratio: selectedRatio,
       })
     });
     if (!res.ok) throw new Error(await res.text());
@@ -471,6 +533,7 @@ generateBtn.addEventListener('click', async () => {
 
 refreshImages();
 refreshOutputs();
+fitPreview();
 </script>
 </body>
 </html>

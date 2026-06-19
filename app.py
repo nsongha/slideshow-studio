@@ -34,6 +34,7 @@ class GenerateRequest(BaseModel):
     filenames: List[str]
     duration: float = 4.0
     speed: str = "medium"
+    ratio: str = "16:9"
 
 
 class RenameRequest(BaseModel):
@@ -138,6 +139,8 @@ def delete_image(name: str):
 def generate(req: GenerateRequest):
     if not req.filenames:
         raise HTTPException(400, "No slides provided")
+    if req.ratio not in slideshow.RATIO_RESOLUTIONS:
+        raise HTTPException(400, f"Invalid ratio: {req.ratio}")
 
     configs = []
     for name in req.filenames:
@@ -156,12 +159,12 @@ def generate(req: GenerateRequest):
     work_dir = WORK_DIR / uuid.uuid4().hex[:8]
 
     try:
-        directions = slideshow.build_slideshow(configs, output_path, work_dir)
+        directions = slideshow.build_slideshow(configs, output_path, work_dir, ratio=req.ratio)
     finally:
         if work_dir.exists():
             shutil.rmtree(work_dir, ignore_errors=True)
 
-    return {"video": output_name, "directions": directions}
+    return {"video": output_name, "directions": directions, "ratio": req.ratio}
 
 
 @app.get("/api/outputs")
