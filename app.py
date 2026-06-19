@@ -33,6 +33,8 @@ app = FastAPI(title="Slideshow Automation")
 class SlideConfig(BaseModel):
     filename: str
     fit_mode: str = "crop"
+    offset_x: float = 0.5
+    offset_y: float = 0.5
 
 
 class GenerateRequest(BaseModel):
@@ -151,6 +153,8 @@ def generate(req: GenerateRequest):
     for s in req.slides:
         if s.fit_mode not in ("crop", "letterbox", "smart"):
             raise HTTPException(400, f"Invalid fit_mode: {s.fit_mode}")
+        if not (0.0 <= s.offset_x <= 1.0 and 0.0 <= s.offset_y <= 1.0):
+            raise HTTPException(400, "offset_x / offset_y must be in [0, 1]")
         path = _safe_name(s.filename)
         if not path.exists():
             raise HTTPException(404, f"Image not found: {s.filename}")
@@ -160,6 +164,8 @@ def generate(req: GenerateRequest):
             "direction": "random",
             "speed": req.speed,
             "fit_mode": s.fit_mode,
+            "offset_x": s.offset_x,
+            "offset_y": s.offset_y,
         })
 
     output_name = f"slideshow_{uuid.uuid4().hex[:8]}.mp4"

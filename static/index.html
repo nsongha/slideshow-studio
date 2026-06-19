@@ -23,11 +23,15 @@
   #previewImg.fit-crop {
     width: 100%; height: 100%; max-width: none; max-height: none;
     object-fit: cover;
+    cursor: move;
+    user-select: none;
+    -webkit-user-drag: none;
   }
   #previewImg.fit-letterbox {
     max-width: 100%; max-height: 100%;
     object-fit: contain;
   }
+  #previewImg.dragging { cursor: grabbing; }
   /* Blurred background — only visible in letterbox mode while previewing an image */
   #previewBg {
     position: absolute; inset: 0;
@@ -140,7 +144,7 @@
 
 <!-- Slide card -->
 <template id="slideTemplate">
-  <div class="slide-card group relative bg-white border border-slate-200 rounded-lg p-2 cursor-grab hover:border-slate-300" data-fit-mode="crop">
+  <div class="slide-card group relative bg-white border border-slate-200 rounded-lg p-2 cursor-grab hover:border-slate-300" data-fit-mode="crop" data-offset-x="0.5" data-offset-y="0.5">
     <div class="flex items-center gap-3">
       <div class="index-num text-[11px] text-slate-400 w-5 text-center tabular-nums select-none">1</div>
       <img class="thumb w-14 h-14 rounded object-cover bg-slate-100 flex-shrink-0 pointer-events-none" />
@@ -237,6 +241,12 @@ ratioToggle.addEventListener('click', e => {
   }
 });
 
+function getCurrentCard() {
+  if (!currentImageFilename) return null;
+  return [...slideList.querySelectorAll('.slide-card')]
+    .find(c => c.dataset.filename === currentImageFilename) || null;
+}
+
 function getCardFitMode(filename) {
   if (!filename) return 'crop';
   const card = [...slideList.querySelectorAll('.slide-card')]
@@ -250,6 +260,14 @@ function applyFitToPreview() {
   const fitMode = getCardFitMode(currentImageFilename);
   previewImg.classList.toggle('fit-crop', fitMode === 'crop');
   previewImg.classList.toggle('fit-letterbox', fitMode === 'letterbox');
+
+  // Apply this slide's crop offsets to object-position (ignored visually in
+  // letterbox mode, but kept so toggling back to crop restores the position).
+  const card = getCurrentCard();
+  const ox = parseFloat(card?.dataset.offsetX ?? 0.5);
+  const oy = parseFloat(card?.dataset.offsetY ?? 0.5);
+  previewImg.style.objectPosition = `${ox * 100}% ${oy * 100}%`;
+
   if (imageVisible && fitMode === 'letterbox' && currentImageFilename) {
     previewBg.src = `/api/images/${encodeURIComponent(currentImageFilename)}`;
     previewBg.classList.remove('hidden');
@@ -258,6 +276,61 @@ function applyFitToPreview() {
     previewBg.removeAttribute('src');
   }
 }
+
+// Drag-to-reposition the crop window when previewing an image in crop mode.
+(function setupCropDrag() {
+  let drag = null;
+
+  function computeOverflow() {
+    const r = previewBox.getBoundingClientRect();
+    const bw = r.width, bh = r.height;
+    const iw = previewImg.naturalWidth, ih = previewImg.naturalHeight;
+    if (!iw || !ih) return { ox: 0, oy: 0 };
+    const scale = Math.max(bw / iw, bh / ih);
+    return { ox: Math.max(0, iw * scale - bw), oy: Math.max(0, ih * scale - bh) };
+  }
+
+  previewImg.addEventListener('mousedown', e => {
+    if (!previewImg.classList.contains('fit-crop')) return;
+    const card = getCurrentCard();
+    if (!card) return;
+    const { ox, oy } = computeOverflow();
+    if (ox === 0 && oy === 0) return; // image already fits exactly, nothing to drag
+    drag = {
+      card,
+      startX: e.clientX,
+      startY: e.clientY,
+      startOX: parseFloat(card.dataset.offsetX ?? 0.5),
+      startOY: parseFloat(card.dataset.offsetY ?? 0.5),
+      overflowX: ox,
+      overflowY: oy,
+    };
+    previewImg.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    let nx = drag.startOX, ny = drag.startOY;
+    // Drag image LEFT (dx < 0) shifts visible window RIGHT, so offset_x increases.
+    // Use negative sign so the image visually follows the cursor.
+    if (drag.overflowX > 0) nx = Math.max(0, Math.min(1, drag.startOX - dx / drag.overflowX));
+    if (drag.overflowY > 0) ny = Math.max(0, Math.min(1, drag.startOY - dy / drag.overflowY));
+    drag.card.dataset.offsetX = nx.toFixed(4);
+    drag.card.dataset.offsetY = ny.toFixed(4);
+    previewImg.style.objectPosition = `${nx * 100}% ${ny * 100}%`;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!drag) return;
+    drag = null;
+    previewImg.classList.remove('dragging');
+  });
+
+  previewImg.addEventListener('dragstart', e => e.preventDefault()); // disable native image drag
+})();
 
 // ---------------- Dynamic preview sizing ----------------
 
@@ -577,6 +650,8 @@ generateBtn.addEventListener('click', async () => {
   const slides = cards.map(c => ({
     filename: c.dataset.filename,
     fit_mode: c.dataset.fitMode || 'crop',
+    offset_x: parseFloat(c.dataset.offsetX ?? 0.5),
+    offset_y: parseFloat(c.dataset.offsetY ?? 0.5),
   }));
 
   generateBtn.disabled = true;
