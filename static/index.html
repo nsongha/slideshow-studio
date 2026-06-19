@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Slideshow Automation</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .slide-card { transition: border-color 0.15s, background 0.15s; }
+  .slide-card.selected { border-color: #2563eb; background: #eff6ff; }
+  .sortable-ghost { opacity: 0.35; background: #dbeafe !important; }
+  .sortable-chosen { cursor: grabbing !important; }
+  .sortable-drag { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18); transform: rotate(-1.5deg); }
+  input[type="range"] { accent-color: #2563eb; }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  .speed-btn.active { background: #0f172a; color: white; }
+  .video-thumb.playing { border-color: #2563eb; }
+  .video-thumb.playing .playing-indicator { display: inline-flex; }
+  .rename-input {
+    width: 100%;
+    border: 1px solid #2563eb;
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 11px;
+    outline: none;
+    text-align: center;
+    background: white;
+  }
+</style>
+</head>
+<body class="bg-slate-100 h-screen overflow-hidden">
+
+<div class="flex h-full">
+
+  <!-- Sidebar -->
+  <aside class="w-[360px] bg-white border-r border-slate-200 flex flex-col">
+    <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+      <div>
+        <h1 class="text-base font-semibold text-slate-800">Assets</h1>
+        <div class="text-xs text-slate-500 mt-0.5"><span id="slideCount">0</span> / <span id="maxCount">30</span> images</div>
+      </div>
+      <label id="uploadLabel" class="inline-flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md cursor-pointer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        Upload
+        <input id="uploadInput" type="file" accept="image/*" multiple class="hidden">
+      </label>
+    </div>
+
+    <div id="slideList" class="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1.5"></div>
+
+    <div class="px-5 py-4 border-t border-slate-200 bg-slate-50 space-y-3">
+      <div>
+        <div class="flex justify-between text-xs text-slate-600 mb-1">
+          <span>Duration per slide</span>
+          <span id="durationLabel" class="tabular-nums font-medium text-slate-800">4.0s</span>
+        </div>
+        <input id="durationRange" type="range" min="1" max="10" step="0.5" value="4" class="w-full" />
+      </div>
+
+      <div>
+        <div class="text-xs text-slate-600 mb-1">Camera speed</div>
+        <div id="speedToggle" class="grid grid-cols-3 gap-1 bg-white border border-slate-200 rounded-md p-0.5">
+          <button data-value="slow" class="speed-btn text-xs py-1 rounded">Slow</button>
+          <button data-value="medium" class="speed-btn text-xs py-1 rounded active">Medium</button>
+          <button data-value="fast" class="speed-btn text-xs py-1 rounded">Fast</button>
+        </div>
+      </div>
+
+      <div class="text-xs text-slate-500">
+        Est. total: <span id="totalDuration" class="font-medium text-slate-700">0</span>s
+      </div>
+
+      <button id="generateBtn" class="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-md text-sm">
+        Generate Slideshow
+      </button>
+    </div>
+  </aside>
+
+  <!-- Preview -->
+  <main class="flex-1 flex flex-col bg-slate-100 overflow-hidden">
+    <div class="flex-1 px-6 pt-6 pb-3 flex items-center justify-center overflow-hidden">
+      <div id="previewBox" class="w-full max-w-4xl aspect-video bg-black rounded-lg shadow-lg flex items-center justify-center overflow-hidden relative">
+        <div id="previewPlaceholder" class="text-slate-400 text-sm">Generate a slideshow to begin</div>
+        <img id="previewImg" class="hidden max-w-full max-h-full object-contain" />
+        <video id="previewVideo" class="hidden max-w-full max-h-full" controls></video>
+
+        <div id="loadingOverlay" class="hidden absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white gap-3">
+          <svg class="animate-spin h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <circle cx="12" cy="12" r="9" opacity="0.3"/>
+            <path d="M21 12a9 9 0 0 0-9-9"/>
+          </svg>
+          <div class="text-sm">Rendering slideshow…</div>
+          <div class="text-xs text-white/60">~5s per slide</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Video gallery -->
+    <div id="videoGalleryWrap" class="hidden px-6 pb-6 overflow-x-auto scrollbar-thin">
+      <div id="videoGallery" class="flex gap-3 justify-center min-w-min"></div>
+    </div>
+  </main>
+</div>
+
+<!-- Slide card -->
+<template id="slideTemplate">
+  <div class="slide-card group relative bg-white border border-slate-200 rounded-lg p-2 cursor-grab flex items-center gap-3 hover:border-slate-300">
+    <div class="index-num text-[11px] text-slate-400 w-5 text-center tabular-nums select-none">1</div>
+    <img class="thumb w-14 h-14 rounded object-cover bg-slate-100 flex-shrink-0 pointer-events-none" />
+    <div class="filename flex-1 min-w-0 text-xs font-medium text-slate-700 truncate"></div>
+    <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+      <label class="p-1.5 rounded hover:bg-slate-100 text-slate-500 cursor-pointer" title="Replace">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>
+        <input type="file" accept="image/*" class="hidden replace-input">
+      </label>
+      <button class="delete-btn p-1.5 rounded hover:bg-red-50 text-slate-500 hover:text-red-600" title="Delete">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+      </button>
+    </div>
+  </div>
+</template>
+
+<!-- Video thumb -->
+<template id="thumbTemplate">
+  <div class="video-thumb group relative w-36 flex-shrink-0 rounded-lg overflow-hidden border-2 border-transparent cursor-pointer hover:border-slate-300 bg-white shadow-sm" data-video="">
+    <div class="relative">
+      <img class="thumb-img w-full aspect-video object-cover bg-slate-200" />
+      <button class="thumb-delete absolute top-1 left-1 w-6 h-6 rounded-full bg-black/60 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+      <a class="thumb-download absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 hover:bg-emerald-600 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Download" download>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 3v12m-5-5l5 5 5-5M5 21h14"/></svg>
+      </a>
+      <span class="playing-indicator absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9px] font-medium hidden">PLAYING</span>
+    </div>
+    <div class="thumb-name text-[11px] px-2 py-1.5 text-slate-700 truncate text-center select-none" title=""></div>
+  </div>
+</template>
+
+<script>
+const $ = id => document.getElementById(id);
+const slideList = $('slideList');
+const slideTemplate = $('slideTemplate');
+const previewImg = $('previewImg');
+const previewVideo = $('previewVideo');
+const previewPlaceholder = $('previewPlaceholder');
+const loadingOverlay = $('loadingOverlay');
+const generateBtn = $('generateBtn');
+const uploadInput = $('uploadInput');
+const uploadLabel = $('uploadLabel');
+const slideCount = $('slideCount');
+const maxCount = $('maxCount');
+const totalDuration = $('totalDuration');
+const durationRange = $('durationRange');
+const durationLabel = $('durationLabel');
+const speedToggle = $('speedToggle');
+const videoGallery = $('videoGallery');
+const videoGalleryWrap = $('videoGalleryWrap');
+const thumbTemplate = $('thumbTemplate');
+
+let imgLimit = 30;
+let speed = 'medium';
+let currentVideo = null;
+
+durationRange.addEventListener('input', () => {
+  durationLabel.textContent = `${parseFloat(durationRange.value).toFixed(1)}s`;
+  updateStats();
+});
+
+speedToggle.addEventListener('click', e => {
+  const btn = e.target.closest('.speed-btn');
+  if (!btn) return;
+  speed = btn.dataset.value;
+  speedToggle.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('active', b === btn));
+});
+
+// ---------------- Images ----------------
+
+async function refreshImages() {
+  const res = await fetch('/api/images');
+  const data = await res.json();
+  imgLimit = data.max;
+  maxCount.textContent = imgLimit;
+
+  const existing = new Map();
+  slideList.querySelectorAll('.slide-card').forEach(c => existing.set(c.dataset.filename, c));
+
+  slideList.innerHTML = '';
+  data.images.forEach((name, idx) => {
+    const card = existing.get(name) || makeSlideCard(name);
+    card.querySelector('.index-num').textContent = idx + 1;
+    slideList.appendChild(card);
+  });
+  updateStats();
+  updateUploadAvail();
+}
+
+function makeSlideCard(filename) {
+  const node = slideTemplate.content.firstElementChild.cloneNode(true);
+  node.dataset.filename = filename;
+  const thumb = node.querySelector('.thumb');
+  thumb.src = `/api/images/${encodeURIComponent(filename)}?t=${Date.now()}`;
+  const nameEl = node.querySelector('.filename');
+  nameEl.textContent = filename;
+  nameEl.title = filename;
+
+  node.addEventListener('click', e => {
+    if (e.target.closest('button') || e.target.closest('label')) return;
+    selectCard(node);
+    showImage(filename);
+  });
+
+  node.querySelector('.delete-btn').addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!confirm(`Delete ${filename}?`)) return;
+    await fetch(`/api/images/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    refreshImages();
+  });
+
+  const replaceInput = node.querySelector('.replace-input');
+  replaceInput.addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/images/${encodeURIComponent(filename)}`, { method: 'PUT', body: fd });
+    if (res.ok) refreshImages();
+    else alert('Replace failed: ' + (await res.text()));
+    e.target.value = '';
+  });
+
+  return node;
+}
+
+// Animated reorder via SortableJS
+Sortable.create(slideList, {
+  animation: 180,
+  easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)',
+  ghostClass: 'sortable-ghost',
+  chosenClass: 'sortable-chosen',
+  dragClass: 'sortable-drag',
+  filter: 'button, label, input',
+  preventOnFilter: false,
+  onEnd: renumberSlides,
+});
+
+function selectCard(node) {
+  slideList.querySelectorAll('.slide-card').forEach(c => c.classList.remove('selected'));
+  node.classList.add('selected');
+}
+
+function renumberSlides() {
+  [...slideList.querySelectorAll('.slide-card')].forEach((c, i) => {
+    c.querySelector('.index-num').textContent = i + 1;
+  });
+}
+
+function showImage(filename) {
+  previewVideo.pause();
+  previewVideo.classList.add('hidden');
+  previewPlaceholder.classList.add('hidden');
+  previewImg.src = `/api/images/${encodeURIComponent(filename)}?t=${Date.now()}`;
+  previewImg.classList.remove('hidden');
+}
+
+function updateStats() {
+  const cards = [...slideList.querySelectorAll('.slide-card')];
+  slideCount.textContent = cards.length;
+  totalDuration.textContent = (cards.length * parseFloat(durationRange.value)).toFixed(1);
+  generateBtn.disabled = cards.length === 0;
+}
+
+function updateUploadAvail() {
+  const count = slideList.querySelectorAll('.slide-card').length;
+  const full = count >= imgLimit;
+  uploadInput.disabled = full;
+  uploadLabel.classList.toggle('opacity-50', full);
+  uploadLabel.classList.toggle('cursor-not-allowed', full);
+  uploadLabel.classList.toggle('cursor-pointer', !full);
+  uploadLabel.title = full ? `Limit reached (${imgLimit})` : '';
+}
+
+uploadInput.addEventListener('change', async e => {
+  const currentCount = slideList.querySelectorAll('.slide-card').length;
+  const slotsLeft = imgLimit - currentCount;
+  const files = [...e.target.files].slice(0, Math.max(0, slotsLeft));
+  if (files.length < e.target.files.length) {
+    alert(`Only uploaded ${files.length} (limit: ${imgLimit} total)`);
+  }
+  for (const file of files) {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/images', { method: 'POST', body: fd });
+    if (!res.ok) {
+      alert(`Upload failed for ${file.name}: ${await res.text()}`);
+      break;
+    }
+  }
+  e.target.value = '';
+  refreshImages();
+});
+
+// ---------------- Output videos / gallery ----------------
+
+async function refreshOutputs(selectName) {
+  const res = await fetch('/api/outputs');
+  const data = await res.json();
+  videoGallery.innerHTML = '';
+  data.outputs.forEach(name => videoGallery.appendChild(makeThumb(name)));
+  videoGalleryWrap.classList.toggle('hidden', data.outputs.length === 0);
+
+  if (selectName && data.outputs.includes(selectName)) {
+    playVideo(selectName);
+  } else if (currentVideo && data.outputs.includes(currentVideo)) {
+    highlightThumb(currentVideo);
+  } else {
+    currentVideo = null;
+  }
+
+  if (data.outputs.length > 0) {
+    generateBtn.textContent = 'Regenerate Slideshow';
+  } else {
+    generateBtn.textContent = 'Generate Slideshow';
+  }
+}
+
+function makeThumb(name) {
+  const node = thumbTemplate.content.firstElementChild.cloneNode(true);
+  node.dataset.video = name;
+
+  const img = node.querySelector('.thumb-img');
+  img.src = `/api/output/${encodeURIComponent(name)}/thumb?t=${Date.now()}`;
+  img.alt = name;
+  img.addEventListener('error', () => { img.src = ''; img.style.background = '#1e293b'; });
+
+  const nameDiv = node.querySelector('.thumb-name');
+  nameDiv.textContent = name;
+  nameDiv.title = `${name} (double-click to rename)`;
+
+  const dl = node.querySelector('.thumb-download');
+  dl.href = `/api/output/${encodeURIComponent(name)}`;
+  dl.setAttribute('download', name);
+  dl.addEventListener('click', e => e.stopPropagation());
+
+  node.querySelector('.thumb-delete').addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!confirm(`Delete "${name}"?\n\nThis can't be undone.`)) return;
+    const res = await fetch(`/api/output/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!res.ok) {
+      alert('Delete failed: ' + (await res.text()));
+      return;
+    }
+    if (currentVideo === name) {
+      currentVideo = null;
+      previewVideo.pause();
+      previewVideo.removeAttribute('src');
+      previewVideo.load();
+      previewVideo.classList.add('hidden');
+      previewPlaceholder.classList.remove('hidden');
+    }
+    refreshOutputs();
+  });
+
+  nameDiv.addEventListener('dblclick', e => {
+    e.stopPropagation();
+    startRename(node, nameDiv);
+  });
+
+  node.addEventListener('click', () => playVideo(node.dataset.video));
+
+  return node;
+}
+
+function startRename(node, nameDiv) {
+  const oldName = node.dataset.video;
+  const oldStem = oldName.replace(/\.mp4$/i, '');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = oldStem;
+  input.className = 'rename-input';
+  nameDiv.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const finish = async commit => {
+    if (done) return;
+    done = true;
+    const newStem = input.value.trim();
+    if (!commit || !newStem || newStem === oldStem) {
+      input.replaceWith(nameDiv);
+      return;
+    }
+    const res = await fetch(`/api/output/${encodeURIComponent(oldName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_name: newStem })
+    });
+    if (!res.ok) {
+      alert('Rename failed: ' + (await res.text()));
+      input.replaceWith(nameDiv);
+      return;
+    }
+    const data = await res.json();
+    if (currentVideo === oldName) currentVideo = data.filename;
+    refreshOutputs(currentVideo === data.filename ? data.filename : undefined);
+  };
+
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+}
+
+function playVideo(name) {
+  currentVideo = name;
+  const url = `/api/output/${encodeURIComponent(name)}`;
+  previewImg.classList.add('hidden');
+  previewPlaceholder.classList.add('hidden');
+  if (!previewVideo.src.endsWith(url)) previewVideo.src = url;
+  previewVideo.classList.remove('hidden');
+  previewVideo.play().catch(() => {});
+  highlightThumb(name);
+}
+
+function highlightThumb(name) {
+  videoGallery.querySelectorAll('.video-thumb').forEach(t => {
+    t.classList.toggle('playing', t.dataset.video === name);
+  });
+  const active = videoGallery.querySelector('.video-thumb.playing');
+  if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+}
+
+// ---------------- Generate ----------------
+
+generateBtn.addEventListener('click', async () => {
+  const cards = [...slideList.querySelectorAll('.slide-card')];
+  if (!cards.length) return;
+  const filenames = cards.map(c => c.dataset.filename);
+
+  generateBtn.disabled = true;
+  loadingOverlay.classList.remove('hidden');
+  previewImg.classList.add('hidden');
+  previewVideo.classList.add('hidden');
+  previewPlaceholder.classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filenames,
+        duration: parseFloat(durationRange.value),
+        speed,
+      })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    await refreshOutputs(data.video);
+  } catch (err) {
+    alert('Generate failed: ' + err.message);
+    if (!currentVideo) previewPlaceholder.classList.remove('hidden');
+  } finally {
+    loadingOverlay.classList.add('hidden');
+    generateBtn.disabled = false;
+  }
+});
+
+refreshImages();
+refreshOutputs();
+</script>
+</body>
+</html>
